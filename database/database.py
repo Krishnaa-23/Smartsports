@@ -1,5 +1,6 @@
 import sqlite3
 from pathlib import Path
+from datetime import datetime
 
 
 # Get the project root directory
@@ -487,6 +488,14 @@ def get_notification_history():
     return result, columns
 
 
+def is_past_slot(slot_date, start_time):
+    """Return True if the slot's start time has already passed (local time)."""
+    started_at = datetime.strptime(
+        f"{slot_date} {start_time}", "%Y-%m-%d %H:%M"
+    )
+    return started_at <= datetime.now()
+
+
 def get_customer_bookings(customer_id):
     """
     Retrieve all bookings for a given customer.
@@ -535,9 +544,14 @@ def cancel_booking(booking_id):
 
     booking = connection.execute(
         """
-        SELECT slot_id, status
-        FROM bookings
-        WHERE booking_id = ?
+        SELECT
+            b.slot_id,
+            b.status,
+            s.slot_date,
+            s.start_time
+        FROM bookings b
+        JOIN slots s ON b.slot_id = s.slot_id
+        WHERE b.booking_id = ?
         """,
         (int(booking_id),)
     ).fetchone()
@@ -546,10 +560,15 @@ def cancel_booking(booking_id):
         connection.close()
         return False, "Booking not found."
 
-    slot_id, current_status = booking
+    slot_id, current_status, slot_date, start_time = booking
     if current_status == "Cancelled":
         connection.close()
         return False, "This booking is already cancelled."
+
+    # A booking whose slot has already started cannot be cancelled.
+    if is_past_slot(slot_date, start_time):
+        connection.close()
+        return False, "Past bookings cannot be cancelled."
 
     # Update booking status
     connection.execute(

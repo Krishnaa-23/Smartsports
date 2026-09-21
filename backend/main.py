@@ -25,6 +25,7 @@ from database.database import (
     get_notification_history,
     get_customer_bookings,
     cancel_booking,
+    is_past_slot,
     save_agent_decision,
     get_agent_decisions
 )
@@ -181,8 +182,10 @@ def make_booking(req: BookingRequest):
 def get_customer_booking_history(customer_id: int):
     """Get all past and active bookings for a customer."""
     bookings, cols = get_customer_bookings(customer_id)
-    return [
-        {
+    result = []
+    for b in bookings:
+        past = is_past_slot(b[4], b[5])
+        result.append({
             "booking_id": b[0],
             "slot_id": b[1],
             "court_name": b[2],
@@ -192,10 +195,13 @@ def get_customer_booking_history(customer_id: int):
             "end_time": b[6],
             "amount_paid": b[7],
             "status": b[8],
-            "booking_date": b[9]
-        }
-        for b in bookings
-    ]
+            "booking_date": b[9],
+            # True once the slot has started; the UI uses this to split
+            # Upcoming vs Past and to hide the Cancel button.
+            "is_past": past,
+            "can_cancel": b[8] == "Confirmed" and not past,
+        })
+    return result
 
 
 @app.delete("/api/bookings/{booking_id}")

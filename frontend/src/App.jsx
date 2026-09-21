@@ -251,6 +251,77 @@ export default function App() {
     }
   };
 
+  // ---- Booking groups: upcoming vs past/cancelled ----
+  // `is_past` is computed by the backend (slot start time has passed).
+  const upcomingBookings = customerBookings
+    .filter((b) => b.status === "Confirmed" && !b.is_past)
+    .sort((a, b) =>
+      `${a.date} ${a.start_time}`.localeCompare(`${b.date} ${b.start_time}`)
+    );
+  const pastBookings = customerBookings.filter(
+    (b) => b.status !== "Confirmed" || b.is_past
+  );
+
+  const renderBookingCard = (b) => {
+    const isCancelled = b.status === "Cancelled";
+    const isCompleted = b.status === "Confirmed" && b.is_past;
+    const badgeLabel = isCancelled
+      ? "Cancelled"
+      : isCompleted
+      ? "Completed"
+      : "Confirmed";
+    const badgeStyle = isCancelled
+      ? "bg-rose-50 text-rose-600 border border-rose-100"
+      : isCompleted
+      ? "bg-slate-100 text-slate-500 border border-slate-200"
+      : "bg-emerald-50 text-[#00875a] border border-emerald-100";
+
+    return (
+      <div
+        key={b.booking_id}
+        className={`p-4 rounded-xl border border-slate-100 hover:border-slate-200 transition-all flex items-center justify-between bg-[#fcfdfd] ${
+          b.is_past || isCancelled ? "opacity-70" : ""
+        }`}
+      >
+        <div className="flex items-center space-x-3.5">
+          <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-600 border border-slate-200">
+            {b.sport === "Football" ? "⚽" : "🏸"}
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <h4 className="font-bold text-slate-900 text-sm">
+                {b.court_name}
+              </h4>
+              <span
+                className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${badgeStyle}`}
+              >
+                {badgeLabel}
+              </span>
+            </div>
+            <span className="text-xs text-slate-400 block mt-1">
+              Date: {b.date} | {b.start_time} - {b.end_time} | Paid: ₹
+              {b.amount_paid.toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-3">
+          <span className="text-sm font-black text-slate-900">
+            ₹{b.amount_paid.toLocaleString()}
+          </span>
+          {b.can_cancel && (
+            <button
+              onClick={() => handleCancelBooking(b.booking_id)}
+              className="px-3 py-1.5 text-xs font-bold text-rose-600 border border-rose-200 hover:bg-rose-50 rounded-lg transition-colors"
+            >
+              Cancel Booking
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputMessage.trim() || chatLoading) return;
@@ -1148,53 +1219,44 @@ export default function App() {
                       No reservations found.
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {customerBookings.map((b) => (
-                        <div
-                          key={b.booking_id}
-                          className="p-4 rounded-xl border border-slate-100 hover:border-slate-200 transition-all flex items-center justify-between bg-[#fcfdfd]"
-                        >
-                          <div className="flex items-center space-x-3.5">
-                            <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-600 border border-slate-200">
-                              {b.sport === "Football" ? "⚽" : "🏸"}
-                            </div>
-                            <div>
-                              <div className="flex items-center space-x-2">
-                                <h4 className="font-bold text-slate-900 text-sm">
-                                  {b.court_name}
-                                </h4>
-                                <span
-                                  className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${
-                                    b.status === "Confirmed"
-                                      ? "bg-emerald-50 text-[#00875a] border border-emerald-100"
-                                      : "bg-rose-50 text-rose-600 border border-rose-100"
-                                  }`}
-                                >
-                                  {b.status}
-                                </span>
-                              </div>
-                              <span className="text-xs text-slate-400 block mt-1">
-                                Date: {b.date} | {b.start_time} - {b.end_time} | Paid: ₹
-                                {b.amount_paid.toLocaleString()}
-                              </span>
-                            </div>
+                    <div className="space-y-6">
+                      {/* Upcoming */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                            Upcoming
+                          </h4>
+                          <span className="text-[11px] font-semibold px-2 py-0.5 bg-emerald-50 text-[#00875a] rounded-md">
+                            {upcomingBookings.length}
+                          </span>
+                        </div>
+                        {upcomingBookings.length === 0 ? (
+                          <div className="p-4 rounded-xl bg-[#fcfdfd] border border-slate-100 text-center text-xs text-slate-400">
+                            No upcoming bookings.
                           </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {upcomingBookings.map((b) => renderBookingCard(b))}
+                          </div>
+                        )}
+                      </div>
 
-                          <div className="flex items-center space-x-3">
-                            <span className="text-sm font-black text-slate-900">
-                              ₹{b.amount_paid.toLocaleString()}
+                      {/* Past & cancelled */}
+                      {pastBookings.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                              Past &amp; Cancelled
+                            </h4>
+                            <span className="text-[11px] font-semibold px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md">
+                              {pastBookings.length}
                             </span>
-                            {b.status === "Confirmed" && (
-                              <button
-                                onClick={() => handleCancelBooking(b.booking_id)}
-                                className="px-3 py-1.5 text-xs font-bold text-rose-600 border border-rose-200 hover:bg-rose-50 rounded-lg transition-colors"
-                              >
-                                Cancel Booking
-                              </button>
-                            )}
+                          </div>
+                          <div className="space-y-3">
+                            {pastBookings.map((b) => renderBookingCard(b))}
                           </div>
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>
@@ -1320,14 +1382,13 @@ export default function App() {
                   </span>
                 </div>
 
-                {customerBookings.filter((b) => b.status === "Confirmed").length === 0 ? (
+                {upcomingBookings.length === 0 ? (
                   <div className="p-4 rounded-xl bg-[#fcfdfd] border border-slate-100 text-center text-xs text-slate-400">
                     No upcoming bookings scheduled.
                   </div>
                 ) : (
                   <div className="space-y-2.5">
-                    {customerBookings
-                      .filter((b) => b.status === "Confirmed")
+                    {upcomingBookings
                       .slice(0, 3)
                       .map((b) => (
                         <div

@@ -207,7 +207,35 @@ def book_slot(
 
     # Check availability
     if status != "Available":
+        # If THIS customer already holds a confirmed booking for the slot
+        # (for example the chat retried the same request after a temporary
+        # Gemini error), say so instead of "no longer available".
+        mine = connection.execute(
+            """
+            SELECT amount_paid
+            FROM bookings
+            WHERE customer_id = ?
+              AND slot_id = ?
+              AND status = 'Confirmed'
+            """,
+            (int(customer_id), int(slot_id))
+        ).fetchone()
+
         connection.close()
+
+        if mine:
+            return {
+                "success": True,
+                "message": "This slot is already booked for you.",
+                "slot_id": slot_id,
+                "court": court_name,
+                "sport": sport,
+                "date": slot_date,
+                "start_time": start_time,
+                "end_time": end_time,
+                "price": mine[0],
+                "already_booked": True
+            }
 
         return {
             "success": False,

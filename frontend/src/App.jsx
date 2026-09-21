@@ -24,7 +24,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
 
 export default function App() {
   // Selected Portal: null (Landing / Role Selection) | 'customer' | 'admin'

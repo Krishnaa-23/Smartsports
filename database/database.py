@@ -157,8 +157,13 @@ def get_customer_available_slots(sport=None, slot_date=None):
     if slot_date:
         query += " AND s.slot_date = ?"
         parameters.append(slot_date.strip())
-    else:
-        query += " AND s.slot_date >= date('now')"
+
+    # Never show slots that have already started (same rule the booking
+    # check in utils/slot_optimizer.py uses), so the list and booking agree.
+    query += """
+        AND datetime(s.slot_date || ' ' || s.start_time)
+            >= datetime('now', 'localtime')
+    """
 
     query += """
         ORDER BY
@@ -183,64 +188,68 @@ def create_booking(
     amount_paid
 ):
     """
-    Create a booking for a customer and mark
-    the selected slot as booked.
+    Create a booking for a customer and mark the selected slot as booked.
+
+    The slot is claimed with a single conditional UPDATE inside an
+    IMMEDIATE transaction, so two simultaneous requests can never both
+    book the same slot.
     """
 
     connection = get_connection()
 
-    # Check whether the slot is still available
-    slot = connection.execute(
-        """
-        SELECT status
-        FROM slots
-        WHERE slot_id = ?
-        """,
-        (int(slot_id),)
-    ).fetchone()
+    try:
+        # Take the write lock up front so concurrent bookings queue up.
+        connection.execute("BEGIN IMMEDIATE")
 
-    if slot is None:
-        connection.close()
-        return False, "Slot not found."
-
-    if slot[0] != "Available":
-        connection.close()
-        return False, "Sorry, this slot is no longer available."
-
-    # Create booking
-    connection.execute(
-        """
-        INSERT INTO bookings
-        (
-            customer_id,
-            slot_id,
-            booking_date,
-            amount_paid,
-            status
+        claimed = connection.execute(
+            """
+            UPDATE slots
+            SET status = 'Booked'
+            WHERE slot_id = ?
+              AND status = 'Available'
+            """,
+            (int(slot_id),)
         )
-        VALUES (?, ?, datetime('now'), ?, 'Confirmed')
-        """,
-        (
-            int(customer_id),
-            int(slot_id),
-            float(amount_paid)
+
+        if claimed.rowcount == 0:
+            exists = connection.execute(
+                "SELECT 1 FROM slots WHERE slot_id = ?",
+                (int(slot_id),)
+            ).fetchone()
+            connection.rollback()
+
+            if exists is None:
+                return False, "Slot not found."
+            return False, "Sorry, this slot is no longer available."
+
+        connection.execute(
+            """
+            INSERT INTO bookings
+            (
+                customer_id,
+                slot_id,
+                booking_date,
+                amount_paid,
+                status
+            )
+            VALUES (?, ?, datetime('now'), ?, 'Confirmed')
+            """,
+            (
+                int(customer_id),
+                int(slot_id),
+                float(amount_paid)
+            )
         )
-    )
 
-    # Mark slot as booked
-    connection.execute(
-        """
-        UPDATE slots
-        SET status = 'Booked'
-        WHERE slot_id = ?
-        """,
-        (int(slot_id),)
-    )
+        connection.commit()
+        return True, "Booking confirmed successfully."
 
-    connection.commit()
-    connection.close()
+    except Exception:
+        connection.rollback()
+        raise
 
-    return True, "Booking confirmed successfully."
+    finally:
+        connection.close()
 
 
 def init_dynamic_pricing_table():
